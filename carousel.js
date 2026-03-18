@@ -7,7 +7,7 @@
   var CONFIG = {
     // Your deployed Google Apps Script Web App URL
     // It will look like: https://script.google.com/macros/s/ABCDEF.../exec
-    SHEET_JSON_URL: "https://script.google.com/macros/s/AKfycbxGYt_KM0dTW-Jex-Y6C-krzSyvANQiaM7jCYWAoVPZ9A9qGwv3kw8Xqd-C9KH2DvAMgw/exec",
+    SHEET_JSON_URL: "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID_HERE/exec",
 
     // Auto-rotation interval in milliseconds (5 seconds)
     AUTO_ROTATE_MS: 5000,
@@ -18,17 +18,18 @@
 
   /* ═══════════════════════════════════════════════════════════ */
 
-  var carousel   = document.getElementById("dcCarousel");
-  var loader     = document.getElementById("dcLoader");
-  var currentIdx = 0;
-  var slideCount = 0;
-  var autoTimer  = null;
+  function init() {
+    var carousel   = document.getElementById("dcCarousel");
+    var loader     = document.getElementById("dcLoader");
+    var currentIdx = 0;
+    var slideCount = 0;
+    var autoTimer  = null;
 
-  // Guard: if the carousel container doesn't exist, bail out
-  if (!carousel) {
-    console.error("[dc-carousel] #dcCarousel element not found on page.");
-    return;
-  }
+    // Guard: if the carousel container doesn't exist, bail out
+    if (!carousel) {
+      console.error("[dc-carousel] #dcCarousel element not found on page.");
+      return;
+    }
 
   // ── Fetch Slide Data from Google Sheets ──────────────────
   function fetchSlideData() {
@@ -216,5 +217,15 @@
 
   // ── Init ─────────────────────────────────────────────────
   fetchSlideData();
+
+  } // end init()
+
+  // Run init when DOM is ready — safe regardless of script load order
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    // DOM already parsed — run immediately
+    init();
+  }
 
 })();
