@@ -1,0 +1,407 @@
+<!--
+  ============================================================
+  DEALER.COM DYNAMIC IMAGE CAROUSEL
+  ============================================================
+  Reads slide data (image URL, link, alt text) directly from
+  a Google Sheet via a Google Apps Script web app endpoint.
+  No CORS proxy needed — Apps Script serves with open headers.
+
+  SETUP:
+  1. Create a Google Sheet with columns: Image URL | Link | Alt Text
+  2. Deploy the Apps Script (see google-apps-script.js)
+  3. Paste the deployed Web App URL into CONFIG.SHEET_JSON_URL below
+  4. Paste this entire block into Dealer.com's RAW HTML Editor
+  ============================================================
+-->
+
+<style>
+  /* ── Reset & Container ──────────────────────────────────── */
+  .dc-carousel * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  .dc-carousel {
+    --carousel-radius: 10px;
+    --arrow-size: 44px;
+    --dot-size: 11px;
+    --transition-speed: 0.55s;
+    position: relative;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow: hidden;
+    border-radius: var(--carousel-radius);
+    background: #0e0e10;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  /* ── Loading State ──────────────────────────────────────── */
+  .dc-carousel__loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+    color: #aaa;
+    font-size: 14px;
+    gap: 10px;
+  }
+  .dc-carousel__loader svg {
+    animation: dc-spin 1s linear infinite;
+  }
+  @keyframes dc-spin { to { transform: rotate(360deg); } }
+
+  /* ── Error State ────────────────────────────────────────── */
+  .dc-carousel__error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+    color: #f87171;
+    font-size: 14px;
+    gap: 8px;
+    text-align: center;
+    padding: 20px;
+  }
+
+  /* ── Track & Slides ─────────────────────────────────────── */
+  .dc-carousel__track {
+    display: flex;
+    transition: transform var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+  }
+
+  .dc-carousel__slide {
+    min-width: 100%;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dc-carousel__slide a {
+    display: block;
+    width: 100%;
+    text-decoration: none;
+  }
+
+  .dc-carousel__slide img {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 200px;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+
+  .dc-carousel__slide a:hover img {
+    transform: scale(1.02);
+  }
+
+  /* ── Navigation Arrows ──────────────────────────────────── */
+  .dc-carousel__arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    width: var(--arrow-size);
+    height: var(--arrow-size);
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.88);
+    color: #1a1a1a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .dc-carousel:hover .dc-carousel__arrow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .dc-carousel__arrow:hover {
+    background: #fff;
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+
+  .dc-carousel__arrow--prev { left: 14px; }
+  .dc-carousel__arrow--next { right: 14px; }
+
+  .dc-carousel__arrow svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2.5;
+  }
+
+  /* ── Dot Indicators ─────────────────────────────────────── */
+  .dc-carousel__dots {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 9px;
+    z-index: 10;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 20px;
+    backdrop-filter: blur(4px);
+  }
+
+  .dc-carousel__dot {
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.7);
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.3s, border-color 0.3s, transform 0.3s;
+    padding: 0;
+  }
+
+  .dc-carousel__dot:hover {
+    border-color: #fff;
+    transform: scale(1.2);
+  }
+
+  .dc-carousel__dot--active {
+    background: #fff;
+    border-color: #fff;
+    transform: scale(1.15);
+  }
+
+  /* ── Responsive ─────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    .dc-carousel { --arrow-size: 36px; --dot-size: 9px; border-radius: 0; }
+    .dc-carousel__dots { bottom: 10px; gap: 7px; }
+    .dc-carousel__arrow--prev { left: 8px; }
+    .dc-carousel__arrow--next { right: 8px; }
+  }
+</style>
+
+<div class="dc-carousel" id="dcCarousel">
+  <div class="dc-carousel__loader" id="dcLoader">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+    Loading slides&hellip;
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ═══════════════════════════════════════════════════════════
+     CONFIGURATION — UPDATE THIS VALUE
+     ═══════════════════════════════════════════════════════════ */
+  var CONFIG = {
+    // Your deployed Google Apps Script Web App URL
+    // It will look like: https://script.google.com/macros/s/ABCDEF.../exec
+    SHEET_JSON_URL: "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID_HERE/exec",
+
+    // Auto-rotation interval in milliseconds (5 seconds)
+    AUTO_ROTATE_MS: 5000,
+
+    // Pause auto-rotation when user hovers over carousel
+    PAUSE_ON_HOVER: true
+  };
+
+  /* ═══════════════════════════════════════════════════════════ */
+
+  var carousel   = document.getElementById("dcCarousel");
+  var loader     = document.getElementById("dcLoader");
+  var currentIdx = 0;
+  var slideCount = 0;
+  var autoTimer  = null;
+
+  // ── Fetch Slide Data from Google Sheets ──────────────────
+  function fetchSlideData() {
+    fetch(CONFIG.SHEET_JSON_URL)
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (slides) {
+        // Handle Apps Script error response
+        if (slides.error) throw new Error(slides.error);
+
+        // Filter out any entries missing an image
+        slides = slides.filter(function (s) {
+          return s.image && s.image.length > 0;
+        });
+
+        if (slides.length === 0) throw new Error("No slides found in spreadsheet.");
+        buildCarousel(slides);
+      })
+      .catch(function (err) {
+        showError(err.message || "Failed to load slide data.");
+      });
+  }
+
+  // ── Build Carousel DOM ───────────────────────────────────
+  function buildCarousel(slides) {
+    slideCount = slides.length;
+    loader.style.display = "none";
+
+    // Track
+    var track = document.createElement("div");
+    track.className = "dc-carousel__track";
+    track.id = "dcTrack";
+
+    slides.forEach(function (s) {
+      var slide = document.createElement("div");
+      slide.className = "dc-carousel__slide";
+
+      var anchor = document.createElement("a");
+      anchor.href = s.link;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+
+      var img = document.createElement("img");
+      img.src = s.image;
+      img.alt = s.alt;
+      img.loading = "lazy";
+
+      anchor.appendChild(img);
+      slide.appendChild(anchor);
+      track.appendChild(slide);
+    });
+
+    carousel.appendChild(track);
+
+    // Prev Arrow
+    var prevBtn = document.createElement("button");
+    prevBtn.className = "dc-carousel__arrow dc-carousel__arrow--prev";
+    prevBtn.setAttribute("aria-label", "Previous slide");
+    prevBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+    prevBtn.addEventListener("click", function () { goTo(currentIdx - 1); resetAuto(); });
+    carousel.appendChild(prevBtn);
+
+    // Next Arrow
+    var nextBtn = document.createElement("button");
+    nextBtn.className = "dc-carousel__arrow dc-carousel__arrow--next";
+    nextBtn.setAttribute("aria-label", "Next slide");
+    nextBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+    nextBtn.addEventListener("click", function () { goTo(currentIdx + 1); resetAuto(); });
+    carousel.appendChild(nextBtn);
+
+    // Dots
+    if (slideCount > 1) {
+      var dotsWrap = document.createElement("div");
+      dotsWrap.className = "dc-carousel__dots";
+      dotsWrap.id = "dcDots";
+
+      for (var i = 0; i < slideCount; i++) {
+        var dot = document.createElement("button");
+        dot.className = "dc-carousel__dot" + (i === 0 ? " dc-carousel__dot--active" : "");
+        dot.setAttribute("aria-label", "Go to slide " + (i + 1));
+        dot.dataset.index = i;
+        dot.addEventListener("click", function () {
+          goTo(parseInt(this.dataset.index, 10));
+          resetAuto();
+        });
+        dotsWrap.appendChild(dot);
+      }
+      carousel.appendChild(dotsWrap);
+    }
+
+    // Hover pause
+    if (CONFIG.PAUSE_ON_HOVER) {
+      carousel.addEventListener("mouseenter", function () { clearInterval(autoTimer); });
+      carousel.addEventListener("mouseleave", function () { startAuto(); });
+    }
+
+    // Touch / swipe support
+    addSwipeSupport(track);
+
+    // Start auto-rotation
+    startAuto();
+  }
+
+  // ── Slide Navigation ─────────────────────────────────────
+  function goTo(idx) {
+    if (slideCount === 0) return;
+
+    // Wrap around
+    if (idx < 0) idx = slideCount - 1;
+    if (idx >= slideCount) idx = 0;
+
+    currentIdx = idx;
+
+    var track = document.getElementById("dcTrack");
+    if (track) {
+      track.style.transform = "translateX(-" + (currentIdx * 100) + "%)";
+    }
+
+    // Update dots
+    var dots = document.querySelectorAll("#dcDots .dc-carousel__dot");
+    for (var i = 0; i < dots.length; i++) {
+      if (i === currentIdx) {
+        dots[i].classList.add("dc-carousel__dot--active");
+      } else {
+        dots[i].classList.remove("dc-carousel__dot--active");
+      }
+    }
+  }
+
+  // ── Auto-Rotation ────────────────────────────────────────
+  function startAuto() {
+    clearInterval(autoTimer);
+    if (slideCount > 1) {
+      autoTimer = setInterval(function () {
+        goTo(currentIdx + 1);
+      }, CONFIG.AUTO_ROTATE_MS);
+    }
+  }
+
+  function resetAuto() {
+    clearInterval(autoTimer);
+    startAuto();
+  }
+
+  // ── Touch / Swipe ────────────────────────────────────────
+  function addSwipeSupport(track) {
+    var startX = 0;
+    var deltaX = 0;
+    var swiping = false;
+
+    track.addEventListener("touchstart", function (e) {
+      startX  = e.touches[0].clientX;
+      swiping = true;
+    }, { passive: true });
+
+    track.addEventListener("touchmove", function (e) {
+      if (!swiping) return;
+      deltaX = e.touches[0].clientX - startX;
+    }, { passive: true });
+
+    track.addEventListener("touchend", function () {
+      if (!swiping) return;
+      swiping = false;
+      if (Math.abs(deltaX) > 50) {
+        if (deltaX < 0) goTo(currentIdx + 1);
+        else            goTo(currentIdx - 1);
+        resetAuto();
+      }
+      deltaX = 0;
+    });
+  }
+
+  // ── Error Display ────────────────────────────────────────
+  function showError(msg) {
+    loader.style.display = "none";
+    var errDiv = document.createElement("div");
+    errDiv.className = "dc-carousel__error";
+    errDiv.innerHTML =
+      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+      "<span>Carousel error: " + msg + "</span>";
+    carousel.appendChild(errDiv);
+  }
+
+  // ── Init ─────────────────────────────────────────────────
+  fetchSlideData();
+
+})();
+</script>
