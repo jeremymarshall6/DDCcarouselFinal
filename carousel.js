@@ -7,7 +7,7 @@
   var CONFIG = {
     // Your deployed Google Apps Script Web App URL
     // It will look like: https://script.google.com/macros/s/ABCDEF.../exec
-    SHEET_JSON_URL: "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID_HERE/exec",
+    SHEET_JSON_URL: "https://script.google.com/macros/s/AKfycbxGYt_KM0dTW-Jex-Y6C-krzSyvANQiaM7jCYWAoVPZ9A9qGwv3kw8Xqd-C9KH2DvAMgw/exec",
 
     // Auto-rotation interval in milliseconds (5 seconds)
     AUTO_ROTATE_MS: 5000,
